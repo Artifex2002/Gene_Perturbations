@@ -2,22 +2,22 @@ import gzip
 import pandas as pd
 from pyfaidx import Fasta
 
-# ========= CONFIG =========
+# paths and flank
 GTF_PATH = "gencode.v44.annotation.gtf.gz"
 GENOME_FASTA = "GRCh38.primary_assembly.genome.fa"
 
-FLANK = 1000  # bp upstream/downstream of TSS. Change to 300 if you want ±300bp
+FLANK = 1000  # bp upstream/downstream of TSS.
 
-# ==========================
 
-# ---- 1. Load gene list from your pairs table ----
-pairs = pd.read_csv("tf_gene_pairs.csv")  # or however you saved it
+# this load gene list from pairs table 
+pairs = pd.read_csv("tf_gene_pairs.csv")  # or however   saved it
 gene_list = sorted(pairs["gene"].unique())
 gene_set = set(gene_list)
 print(f"Number of unique genes in pairs: {len(gene_set)}")
 
-# ---- 2. Build gene -> (chrom, strand, TSS) map from GENCODE ----
-# We'll use 'transcript' entries to get TSS; then pick one transcript per gene.
+# gene -> (chrom, strand, TSS) map from GENCODE 
+
+# we'll use 'transcript' entries to get TSS and then pick one transcript per gene.
 
 rows = []
 with gzip.open(GTF_PATH, "rt") as fh:
@@ -28,7 +28,7 @@ with gzip.open(GTF_PATH, "rt") as fh:
         if feature != "transcript":
             continue
 
-        # parse attributes into a dict
+        # parse attributes into a dictionairy 
         attr_dict = {}
         for field in attrs.strip().split(";"):
             field = field.strip()
@@ -53,8 +53,8 @@ with gzip.open(GTF_PATH, "rt") as fh:
 tss_df = pd.DataFrame(rows, columns=["gene", "chrom", "strand", "tss"])
 print(f"Found TSS entries for {tss_df['gene'].nunique()} of our genes.")
 
-# If multiple transcripts per gene, pick one.
-# Simple rule: take the "most upstream" TSS for + strand, "most downstream" for - strand.
+# If multiple transcripts per gene, pick one
+# take the "most upstream" TSS for + strand, "most downstream" for - strand.
 tss_df = (
     tss_df
     .sort_values(["gene", "chrom", "strand", "tss"])
@@ -62,12 +62,13 @@ tss_df = (
     .set_index("gene")
 )
 
-print("Example TSS rows:")
+
+
+print("ex. TSS rows look like:")
 print(tss_df.head())
 print(f"Final TSS map size: {tss_df.shape[0]} genes.")
 
-# ---- 3. Extract promoter sequences from the genome FASTA ----
-
+# extract promoter sequences from genome FASTA 
 genome = Fasta(GENOME_FASTA)
 comp = str.maketrans("ACGTacgt", "TGCAtgca")
 
@@ -108,7 +109,7 @@ print(f"Got promoter sequences for {len(gene_seq)} genes.")
 if missing_chrom:
     print("Missing chromosomes in FASTA:", missing_chrom)
 
-# ---- 4. Attach promoter sequences to pairs and optionally write FASTA ----
+# attach promoter sequences to pairs and write FASTA
 
 pairs["promoter_seq"] = pairs["gene"].map(gene_seq)
 before = pairs.shape[0]
@@ -117,10 +118,10 @@ after = pairs.shape[0]
 print(f"Dropped {before - after} TF-gene rows with missing promoter sequence.")
 print("Final pairs shape:", pairs.shape)
 
-# Save updated table for ML / embedding step
+# save updated table for embedding step
 pairs.to_csv(f"tf_gene_pairs_with_promoters_flank{FLANK}.csv", index=False)
 
-# Also write promoters to a FASTA file (one per gene) if you want
+# Also write promoters to a FASTA file (one per gene) if wanted. this is a lightweight file that can be used by some embedders etc.
 with open(f"promoters_flank{FLANK}.fasta", "w") as out:
     for g, seq in gene_seq.items():
         out.write(f">{g}\n{seq}\n")
